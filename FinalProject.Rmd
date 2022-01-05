@@ -1,0 +1,250 @@
+---
+title: "FinalProject"
+author: "Bruce Mallory"
+date: "12/15/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+library(systemfonts)
+library(kableExtra)
+library(psych)
+library(GPArotation)
+library(mirt)
+library(gridExtra)
+
+setwd("~/MSSP/755 Measurement & Psychometrics Theory/Assignment_3 (FinalProject)")
+```
+
+# A. Import, clean and reverse code data
+```{r}
+CCH <- read_excel("2021.9.14_HopeMetric.xlsx")
+CCH <- CCH %>% select(-c(1)) %>%
+  slice(2:nrow(CCH)) %>%
+  setNames(c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8i", "Q9i", "Q10i")) %>%
+  mutate_if(is.character, as.numeric) %>%
+  mutate(Q8=6-Q8i, Q9=6-Q9i, Q10=6-Q10i) %>% 
+  select(-c(8:10)) %>% 
+  mutate(score=rowSums(.))
+#Note: Q8-Q10 are reverse coded.  "score" is the sum of the ten question responses.
+``` 
+
+# B. Summary data
+```{r}
+#checking for NAs or zeros
+summary(CCH)
+
+#histogram to display score data and assess normality of the data
+ggplot(CCH) +
+  geom_histogram(aes(score), binwidth = 2, fill="lightblue", color="grey") +
+  geom_vline(xintercept = mean(CCH$score), 
+             lty=2, color="blue") +
+  theme(text = element_text(family = "Courier")) +
+  annotate("text", x=24.15, y=101, 
+           label = paste("mean = ", round(mean(CCH$score),1)),
+           color="blue") +
+   geom_vline(xintercept = c(mean(CCH$score)+sd(CCH$score),
+                                 mean(CCH$score)-sd(CCH$score),
+                             mean(CCH$score)+2*sd(CCH$score),
+                                 mean(CCH$score)-2*sd(CCH$score)),
+              lty=2, color="darkgreen") +
+     annotate("text", x=24.15, y=96, 
+           label = paste("st. dev. = ", round(sd(CCH$score),1)),
+           color="darkgreen") +
+  theme_bw() +
+  theme(plot.title = element_text(face="bold.italic", size=20)) + 
+  scale_x_continuous(breaks = seq(21, 53, 4)) +
+  labs(title ="Score distribution for pre-service teachers",
+       subtitle = "(n=555) score = the sum of the ten instrument questions",
+       y = "count") +
+  stat_function(fun = dnorm,
+                args = with(CCH, c(mean = mean(score), sd = sd(score))),
+                color="black") +
+  stat_function(fun = function(x, mean, sd, n){
+			n * dnorm(x = x, mean = mean, sd = sd)
+		}, 
+		args = with(mtcars, c(mean = mean(CCH$score), sd = sd(CCH$score), n= 2*length(CCH$score))),
+		color="orange2") +
+  annotate("text", x=24.15, y=83, 
+           label = paste("S-W test p-value = ", round(shapiro.test(CCH$score)$p.value, 4)),
+           color="orange2") 
+
+#code to organize and present in a table the mean and std.dev. for each question
+CCH_Q_summary <- tibble(question=paste("Q", seq(1,11,1), sep=""),
+                        mean=round(apply(CCH, 2, mean),2),
+                        standard_deviation=round(apply(CCH, 2, sd),2))
+CCH_Q_summary$question[11] <- "score"
+a <- rbind(names(CCH_Q_summary), CCH_Q_summary)
+b <- data.frame(t(CCH_Q_summary))
+names(b) <- b %>% slice(1) %>% unlist()
+b <- b %>% slice(-1)
+kable(b, booktabs=TRUE) %>% kable_styling(font_size=16)
+
+#two sample t-test to compare Q1 and Q2
+t.test(CCH$Q1, CCH$Q2)
+
+#######################################
+# Question histograms
+#######################################
+
+Q_hist <- function(q_num) {
+  ggplot() +
+  geom_histogram(aes(x=CCH[[q_num]]), binwidth = .5, fill="lightblue", color="grey") +
+    theme(text = element_text(family = "Courier"),
+          panel.grid.major.x=element_blank(),
+          panel.grid.minor.x = element_blank(),
+          panel.background = element_blank(),
+          panel.grid.major.y = element_line(color = "grey")) +
+    ylim(c(0,375)) +
+    xlab(q_num)
+}
+
+# for (i in names(CCH[1:10])) {
+#   a <- Q_hist(i)
+# }
+
+a <- Q_hist("Q1")
+b <- Q_hist("Q2")
+c <- Q_hist("Q3")
+d <- Q_hist("Q4")
+e <- Q_hist("Q5")
+f <- Q_hist("Q6")
+g <- Q_hist("Q7")
+h <- Q_hist("Q8")
+i <- Q_hist("Q9")
+j <- Q_hist("Q10")
+
+grid.arrange(a, b, c, d, e, f, g, h, i, j, nrow=2)
+```
+
+# C. Cronbach's alpha and Factor analysis
+```{r}
+##################################
+#Chronbach's alpha
+alpha(CCH[,1:10])
+
+##################################
+#Exploratory Factor analysis
+##################################
+#K-G rule shows three factors
+one_factor <- fa(CCH[,1:10],1,n.obs=555)
+one_factor$e.values
+     
+#Scree test
+plot(one_factor[["e.values"]])
+
+#Parallel Analysis
+fa.parallel(CCH[,1:10], main="Parallel Analysis of CCH data", fa="fa")
+
+##################################
+#Factor analysis - loadings
+##################################
+fa(CCH[,1:10],3,n.obs=555)
+fa(CCH[,1:10],3,n.obs=555,rotate="Promax")$loadings
+fa(CCH[,1:10],3,n.obs=555,rotate="oblimin")$loadings
+fa(CCH[,1:10],2,n.obs=555)
+fa(CCH[,1:10],2,n.obs=555,rotate="Promax")$loadings
+
+##################################
+#'What if it were two different scales?
+#'"hope" and "despair"
+##################################
+#hope
+fa(CCH[,1:7],1,n.obs=555,rotate="Promax")
+fa(CCH[,1:7],2,n.obs=555,rotate="Promax")
+fa(CCH[,1:7],2,n.obs=555,rotate="Promax")$loadings
+alpha(CCH[,1:7])
+
+#K-G rule shows three factors
+one_factor <- fa(CCH[,1:7],1,n.obs=555)
+one_factor$e.values
+     
+#Scree test
+plot(one_factor[["e.values"]])
+
+#Parallel Analysis
+fa.parallel(CCH[,1:7], main="Parallel Analysis of CCH data for Q1-Q7", fa="fa")
+
+#despair
+fa(CCH[,8:10],1,n.obs=555,rotate="Promax")
+fa(CCH[,8:10],1,n.obs=555,rotate="Promax")$loadings
+alpha(CCH[,8:10])
+
+```
+
+# D. Item Response Theory
+```{r}
+#######################################################
+# The Generalized Partial Credit Model (GPCM)
+#######################################################
+
+GPCM_model <- 'CCH = 1-10'
+
+mirt_results_GPCM_model <-mirt(data=CCH[1:10], model = GPCM_model, itemtype = "gpcm", SE=TRUE,verbose = FALSE)
+
+coef_GPCM_Sci <-coef(mirt_results_GPCM_model, IRTpars=TRUE, simplify=TRUE)
+
+coef_GPCM_Sci[["items"]]
+
+# Item characteristic curves
+plot(mirt_results_GPCM_model, type = 'trace', main = "ICCs for 10Q CCHS - Model: GPCM",
+     auto.key=list(points=FALSE, lines=TRUE, columns=2), theta_lim = c(-4,4))
+
+# Item information curves
+plot(mirt_results_GPCM_model, type = 'infotrace', main = "IICs for CCHS - Model: GPCM", auto.key=list(points=FALSE, lines=TRUE, columns=2), theta_lim = c(-4,4))
+
+# Test Characteristic curve
+plot(mirt_results_GPCM_model, type = 'info', main = "TCC - Model: GPCM", auto.key=list(points=FALSE, lines=TRUE, columns=2), theta_lim = c(-4,4))
+
+#######################################################
+# The Graded Response Model (GRM)
+#######################################################
+
+GRM_model <- 'CCH = 1-10'
+
+mirt_results_GRM_model <-mirt(data=CCH[1:10], model = GRM_model, itemtype = "graded", SE=TRUE,verbose = FALSE)
+
+coef_GRM_Sci <-coef(mirt_results_GRM_model, IRTpars=TRUE, simplify=TRUE)
+
+coef_GRM_Sci[["items"]]
+
+# Item characteristic curves
+plot(mirt_results_GRM_model, type = 'trace', main = "ICCs for 10Q CCHS - Model: GRM",
+     auto.key=list(points=FALSE, lines=TRUE, columns=2), theta_lim = c(-4,4),
+     which.items =c(1:7))
+
+# Item information curves
+plot(mirt_results_GRM_model, type = 'infotrace', main = "IICs for CCHS - Model: GRM", auto.key=list(points=FALSE, lines=TRUE, columns=2), theta_lim = c(-4,4))
+
+# Test Characteristic curve
+plot(mirt_results_GRM_model, type = 'info', main = "TCC - Model: GRM", auto.key=list(points=FALSE, lines=TRUE, columns=2), theta_lim = c(-4,4))
+
+#######################################################
+# comparing model fit   
+#######################################################
+
+model_fit <- anova(mirt_results_GPCM_model, mirt_results_GRM_model)
+model_fit <- model_fit %>% select(c(1,5)) %>% 
+  mutate(model_type=c("GPCM", "GRM")) %>% 
+  relocate(model_type, everything())
+kable(model_fit)
+
+
+#######################################################
+# marginal reliabilities   
+#######################################################
+
+marginal_rxx(mirt_results_GPCM_model)
+
+marginal_rxx(mirt_results_GRM_model)
+
+```
+
+
+
